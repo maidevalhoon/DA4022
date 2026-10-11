@@ -1,0 +1,103 @@
+================================================================
+COURSE PROJECT PROPOSAL
+================================================================
+
+Title: Dynamic Memory Allocation in LLMs using Multi-Tier Uncertainty Quantification
+
+================================================================
+
+
+PROBLEM STATEMENT
+----------------------------------------------------------------
+
+Large Language Models (LLMs) are increasingly deployed for a wide range of tasks — from simple factual lookups to complex multi-step reasoning. Despite this variation in query difficulty, current LLM deployment strategies allocate a fixed computational budget for every query: the same maximum KV cache size, the same context window, and the same generation strategy, regardless of how simple or complex the input is.
+
+This leads to two serious problems:
+
+  1. RESOURCE WASTE: Simple queries that the model can answer confidently are given the same expensive memory allocation as the hardest queries, wasting GPU memory and time.
+
+  2. HALLUCINATIONS: For genuinely ambiguous or knowledge-intensive queries, the fixed budget is often insufficient. When the model runs out of resources to reason correctly, it fabricates plausible but incorrect answers.
+
+Existing solutions propose using sampling-based uncertainty metrics (such as Semantic Entropy or SemanticDPP) to detect uncertain queries. However, these methods contain a fundamental contradiction: to compute uncertainty, they first generate multiple responses from the model — which is itself expensive in memory and compute. Using a costly metric to decide whether to save cost defeats the purpose entirely.
+
+
+SOLUTION PROPOSED
+----------------------------------------------------------------
+
+We propose a Multi-Tier Adaptive Inference Controller — a middleware system that sits between the user's input and the LLM, and dynamically adjusts memory and compute allocation based on the model's real-time uncertainty.
+
+Our key insight is to use a cheap, pre-generation confidence check to handle the majority of queries, and only invoke the expensive sampling-based metric for the small subset of genuinely ambiguous queries.
+
+The pipeline operates in two tiers:
+
++------+------------------------------+-----------+---------------------+
+| Tier | Method                       | Cost      | Action              |
++------+------------------------------+-----------+---------------------+
+|  1   | Query-Level Internal         | Near-Zero | Fast Accept/Reject  |
+|      | Confidence                   | (1 pass)  |                     |
++------+------------------------------+-----------+---------------------+
+|  2   | SemanticDPP (DPP over        | Moderate  | Verify or Escalate  |
+|      | sampled embeddings)          | (m passes)|                     |
++------+------------------------------+-----------+---------------------+
+
+
+TIER 1 — Pre-Generation Routing (Query-Level Uncertainty)
+---------------------------------------------------------
+
+Before generating any tokens, we perform a single forward pass of the prompt through the model and extract its hidden states across multiple layers. Using an attenuated encoding approach, we compute an "Internal Confidence" score that estimates how likely the model is to answer correctly.
+
+  - If confidence is HIGH  →  Allocate minimal KV cache, use greedy decoding, generate the response immediately. (Zero extra cost, handled in a single pass.)
+
+  - If confidence is LOW   →  Do not generate yet. Pass the query to Tier 2 for deeper analysis.
+
+
+TIER 2 — Semantic Verification (SemanticDPP)
+--------------------------------------------
+
+For queries flagged as uncertain by Tier 1, we sample a small number (m) of candidate responses from the model and extract their embedding vectors. A single-layer neural network then projects these embeddings into a lower-dimensional semantic subspace. We apply a Determinantal Point Process (DPP) and compute the log-determinant of the covariance kernel to measure how semantically diverse (i.e., uncertain) the responses are.
+
+  - If SemanticDPP uncertainty is LOW  →  The model converges on a consistent answer. Generate the final response.
+
+  - If SemanticDPP uncertainty is HIGH →  True hallucination risk detected. Dynamically escalate:
+      (a) Trigger Dense Retrieval (RAG) to inject factual context from an external knowledge base, OR
+      (b) Cascade the query to a larger, higher-capacity model.
+
+
+NOVELTY & TECHNICAL DIFFICULTIES
+----------------------------------------------------------------
+
+Novelty: The primary novelty lies in synthesizing pre-generation (Internal Confidence) and post-generation (SemanticDPP) metrics into a unified, cost-aware inference pipeline. While prior work applies expensive uncertainty checks uniformly, our architecture introduces a "zero-cost" routing filter that intelligently bypasses computation for confident queries. Furthermore, actively bridging these theoretical metrics into a real-time deployment framework with dynamic KV cache resizing and model cascading provides a highly practical contribution.
+
+Difficulties: The main technical challenge involves efficiently intercepting and extracting the model's internal hidden states during the forward pass without introducing prohibitive inference latency. Additionally, rigorously tuning the confidence thresholds across tiers to optimally balance resource savings against the risk of hallucination will require extensive experimentation.
+
+
+IMPLEMENTATION & EVALUATION PLAN
+----------------------------------------------------------------
+
+Models   : Llama-3.2-3B (primary) and Llama-3.1-8B (cascade target, 4-bit quantized)
+Hardware : NVIDIA Tesla P100 (16 GB VRAM) — Both models fit simultaneously in VRAM, enabling true real-time model cascading.
+
+Datasets for Evaluation:
+
+  +------------------+----------------------------------------+
+  | Dataset          | What it Tests                          |
+  +------------------+----------------------------------------+
+  | TruthfulQA       | Factual reliability & hallucinations   |
+  | GSM8k            | Multi-step arithmetic reasoning        |
+  | TriviaQA         | General knowledge & factual recall     |
+  +------------------+----------------------------------------+
+
+Evaluation Metrics:
+
+  - AUROC (Area Under ROC Curve): Measures how well our controller distinguishes answerable from non-answerable queries.
+  - Peak Memory Reduction (GB): Quantifies GPU memory saved compared to a static allocation baseline.
+  - Inference Latency (seconds): Measures end-to-end response time improvement per query.
+
+----------------------------------------------------------------
+REFERENCE PAPERS
+----------------------------------------------------------------
+
+1. SemanticDPP: Efficient Uncertainty Quantification in LLMs, ICLR, 2026
+2. Query-Level Uncertainty in Large Language Models, ICLR, 2026
+
+================================================================
