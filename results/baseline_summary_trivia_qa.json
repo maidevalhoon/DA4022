@@ -1,0 +1,29 @@
+{
+  "ic": {
+    "method": "Internal Confidence (Paper A)",
+    "dataset": "trivia_qa",
+    "n_samples": 50,
+    "auroc": 92.31,
+    "target_auroc": 68.7,
+    "prr": 56.29,
+    "target_prr": 35.5,
+    "ece": 0.262,
+    "mean_latency_ms": 0.44,
+    "fast_path_pct": 36.0,
+    "uncertain_pct": 32.0,
+    "abstain_pct": 32.0,
+    "elapsed_seconds": 0.02
+  },
+  "dpp": {
+    "method": "SemanticDPP (Paper B)",
+    "dataset": "trivia_qa",
+    "n_samples": 50,
+    "auroc": 100.0,
+    "target_auroc": 82.0,
+    "prr": 66.45,
+    "ece": 0.0131,
+    "mean_latency_ms": 7.11,
+    "mean_clusters": 1.0,
+    "elapsed_seconds": 0.36
+  }
+}

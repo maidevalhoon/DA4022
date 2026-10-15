@@ -1,0 +1,12 @@
+{
+  "method": "SemanticDPP (Paper B)",
+  "dataset": "gsm8k",
+  "n_samples": 50,
+  "auroc": 100.0,
+  "target_auroc": 69.0,
+  "prr": 89.83,
+  "ece": 0.2624,
+  "mean_latency_ms": 12.94,
+  "mean_clusters": 1.0,
+  "elapsed_seconds": 0.65
+}

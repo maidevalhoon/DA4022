@@ -1,0 +1,36 @@
+# Default configuration for UCA Phase 1 & Baseline Reproduction
+# Reference: ICLR 2026 Paper A (Chen et al.) & Paper B (Hamer et al.)
+
+model:
+  name: "meta-llama/Llama-3.2-3B"
+  device: "auto"               # "mps", "cuda", "cpu", or "auto"
+  torch_dtype: "float16"
+  low_cpu_mem_usage: true
+
+ic_gate:
+  alpha: 1.0                   # Attenuated Encoding locality parameter (fixed per Paper A Section 4.1)
+  tau_high: 0.65               # High-confidence threshold (fast path / aggressive compression)
+  tau_low: 0.30                # Low-confidence threshold (abstain / RAG / uncompressed)
+  decision_center: "last_layer_last_token"  # Training-free anchor
+
+semantic_dpp:
+  m: 3                         # Number of sampled responses (Paper B uses 5; UCA uses 3 for efficiency)
+  temperature: 0.8             # Sampling temperature for diverse outputs
+  alpha: 1.0                   # RBF kernel bandwidth
+  subspace_dim: 256            # Projection dimension p (orthogonal projection R^d -> R^p)
+  eps: 1e-6                    # Tikhonov regularization factor for numerical stability
+
+benchmarks:
+  trivia_qa:
+    split: "validation"
+    sample_size: 200
+  gsm8k:
+    split: "test"
+    sample_size: 100
+
+evaluation:
+  metrics:
+    - "auroc"
+    - "prr"
+    - "ece"
+    - "latency"

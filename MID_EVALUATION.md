@@ -1,6 +1,5 @@
-# COURSE PROJECT PROPOSAL
-
-**Title: Project 7: Uncertainty for Optimal Memory Allocation**
+# Project 7: Uncertainty for Optimal Memory Allocation
+**DA4022 Mid-Evaluation Report**
 
 **Team:**
 Deval Singhal (230101035) · Jayant Kumar (230101050) · Sonal Mangesh Wagh (230108054)
@@ -32,8 +31,8 @@ Neither paper connects uncertainty to downstream memory or compute allocation.
 | Computation cost | ~1 forward pass (zero decode) | m forward passes (m ≥ 3) |
 | Output | Single IC score ∈ [0,1] | log-det scalar + kernel matrix |
 | Downstream use | Binary: trigger RAG / abstain | Binary: abstain threshold |
-| Memory allocation | ❌ Not addressed | ❌ Not addressed |
-| Adaptive compression | ❌ Not addressed | ❌ Not addressed |
+| Memory allocation | ✗ Not addressed | ✗ Not addressed |
+| Adaptive compression | ✗ Not addressed | ✗ Not addressed |
 
 **The core gap:** Both papers produce uncertainty signals but use them only as binary on/off switches. Neither uses uncertainty as a *continuous control variable* to modulate how much memory or compute is allocated per query.
 
@@ -144,11 +143,6 @@ We will evaluate UCA against two standalone baselines drawn from the two provide
 - **Latency per query:** IC adds ~1 forward pass; DPP adds ~3 generation passes.
 
 **Datasets:** TriviaQA, GSM8K (same as Paper 1 evaluation). Model: Llama-3.2-3B.
-
-**Ablations (planned):**
-- UCA without eigenspectrum (use log-det scalar only) — tests Paper 2's eigenspectrum contribution.
-- UCA without IC gate (always run DPP) — tests Paper 1's speed contribution.
-- UCA with fixed KV budget — isolates memory savings from adaptive allocation.
 
 ---
 

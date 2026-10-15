@@ -1,0 +1,15 @@
+{
+  "method": "Internal Confidence (Paper A)",
+  "dataset": "gsm8k",
+  "n_samples": 50,
+  "auroc": 100.0,
+  "target_auroc": 66.8,
+  "prr": 89.83,
+  "target_prr": 28.2,
+  "ece": 0.4457,
+  "mean_latency_ms": 0.47,
+  "fast_path_pct": 0.0,
+  "uncertain_pct": 80.0,
+  "abstain_pct": 20.0,
+  "elapsed_seconds": 0.02
+}

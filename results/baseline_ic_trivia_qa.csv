@@ -1,0 +1,51 @@
+id,question,difficulty,is_correct,ic_score,uncertainty,locality,route,latency_ms
+tqa_001_0,What is the capital city of Australia?,easy,1,0.6701804608947659,0.3298195391052341,0.018501962488637013,fast_path,0.8245420031016693
+tqa_002_0,Who wrote the play Romeo and Juliet?,easy,1,0.7069188301649367,0.29308116983506327,0.018501962488637013,fast_path,0.46254199696704745
+tqa_003_0,What element has the chemical symbol Fe?,easy,1,0.6599536290141723,0.3400463709858277,0.018501962488637013,fast_path,0.4513749881880358
+tqa_004_0,In what year did the Apollo 11 mission land on the Moon?,medium,1,0.36550720711002876,0.6344927928899713,0.018501962488637013,uncertain,0.44979101221542805
+tqa_005_0,Which French biologist and chemist developed the process of pasteurization?,medium,0,0.37252249660370823,0.6274775033962918,0.018501962488637013,uncertain,0.45033400238025934
+tqa_006_0,What is the deepest lake in the world?,medium,0,0.4146061383441051,0.5853938616558949,0.018501962488637013,uncertain,0.4271669895388186
+tqa_007_0,Who was the Byzantine emperor during the Nika riots in 532 AD?,hard,0,0.11345678189338118,0.8865432181066188,0.018501962488637013,abstain,0.4343750042608008
+tqa_008_0,What is the term for the hypothetical boundary surrounding a black hole from which nothing can escape?,medium,1,0.3971458596578683,0.6028541403421317,0.018501962488637013,uncertain,0.45104199671186507
+tqa_009_0,Which treaty ended the Thirty Years' War in Europe in 1648?,hard,0,0.13583923915946106,0.8641607608405389,0.018501962488637013,abstain,0.4167080041952431
+tqa_010_0,What is the exact chromosomal anomaly responsible for Cri du Chat syndrome?,hard,0,0.17018519728905546,0.8298148027109445,0.018501962488637013,abstain,0.42104099702555686
+tqa_011_0,Who formulated the mathematical theorem stating that every planar graph is 4-colorable?,hard,0,0.1439440433620861,0.8560559566379139,0.018501962488637013,abstain,0.5095829983474687
+tqa_012_0,What is the name of the ancient city carved into pink sandstone cliffs in southern Jordan?,easy,1,0.686484520570741,0.31351547942925895,0.018501962488637013,fast_path,0.44416700256988406
+tqa_001_1,What is the capital city of Australia?,easy,1,0.6701804608947659,0.3298195391052341,0.018501962488637013,fast_path,0.4214169894112274
+tqa_002_1,Who wrote the play Romeo and Juliet?,easy,1,0.7069188301649367,0.29308116983506327,0.018501962488637013,fast_path,0.47162499686237425
+tqa_003_1,What element has the chemical symbol Fe?,easy,1,0.6599536290141723,0.3400463709858277,0.018501962488637013,fast_path,0.44458400225266814
+tqa_004_1,In what year did the Apollo 11 mission land on the Moon?,medium,1,0.36550720711002876,0.6344927928899713,0.018501962488637013,uncertain,0.412291003158316
+tqa_005_1,Which French biologist and chemist developed the process of pasteurization?,medium,0,0.37252249660370823,0.6274775033962918,0.018501962488637013,uncertain,0.42212499829474837
+tqa_006_1,What is the deepest lake in the world?,medium,0,0.4146061383441051,0.5853938616558949,0.018501962488637013,uncertain,0.43975000153295696
+tqa_007_1,Who was the Byzantine emperor during the Nika riots in 532 AD?,hard,0,0.11345678189338118,0.8865432181066188,0.018501962488637013,abstain,0.41287500062026083
+tqa_008_1,What is the term for the hypothetical boundary surrounding a black hole from which nothing can escape?,medium,1,0.3971458596578683,0.6028541403421317,0.018501962488637013,uncertain,0.42600001324899495
+tqa_009_1,Which treaty ended the Thirty Years' War in Europe in 1648?,hard,0,0.13583923915946106,0.8641607608405389,0.018501962488637013,abstain,0.42862498958129436
+tqa_010_1,What is the exact chromosomal anomaly responsible for Cri du Chat syndrome?,hard,0,0.17018519728905546,0.8298148027109445,0.018501962488637013,abstain,0.4124999977648258
+tqa_011_1,Who formulated the mathematical theorem stating that every planar graph is 4-colorable?,hard,0,0.1439440433620861,0.8560559566379139,0.018501962488637013,abstain,0.41266699554398656
+tqa_012_1,What is the name of the ancient city carved into pink sandstone cliffs in southern Jordan?,easy,1,0.686484520570741,0.31351547942925895,0.018501962488637013,fast_path,0.40862499736249447
+tqa_001_2,What is the capital city of Australia?,easy,1,0.6701804608947659,0.3298195391052341,0.018501962488637013,fast_path,0.4172910121269524
+tqa_002_2,Who wrote the play Romeo and Juliet?,easy,1,0.7069188301649367,0.29308116983506327,0.018501962488637013,fast_path,0.41758400038816035
+tqa_003_2,What element has the chemical symbol Fe?,easy,1,0.6599536290141723,0.3400463709858277,0.018501962488637013,fast_path,0.4185840080026537
+tqa_004_2,In what year did the Apollo 11 mission land on the Moon?,medium,1,0.36550720711002876,0.6344927928899713,0.018501962488637013,uncertain,0.41858300392050296
+tqa_005_2,Which French biologist and chemist developed the process of pasteurization?,medium,0,0.37252249660370823,0.6274775033962918,0.018501962488637013,uncertain,0.519374996656552
+tqa_006_2,What is the deepest lake in the world?,medium,0,0.4146061383441051,0.5853938616558949,0.018501962488637013,uncertain,0.4513339954428375
+tqa_007_2,Who was the Byzantine emperor during the Nika riots in 532 AD?,hard,0,0.11345678189338118,0.8865432181066188,0.018501962488637013,abstain,0.43149999692104757
+tqa_008_2,What is the term for the hypothetical boundary surrounding a black hole from which nothing can escape?,medium,1,0.3971458596578683,0.6028541403421317,0.018501962488637013,uncertain,0.41295800474472344
+tqa_009_2,Which treaty ended the Thirty Years' War in Europe in 1648?,hard,0,0.13583923915946106,0.8641607608405389,0.018501962488637013,abstain,0.4118339857086539
+tqa_010_2,What is the exact chromosomal anomaly responsible for Cri du Chat syndrome?,hard,0,0.17018519728905546,0.8298148027109445,0.018501962488637013,abstain,0.4132920003030449
+tqa_011_2,Who formulated the mathematical theorem stating that every planar graph is 4-colorable?,hard,0,0.1439440433620861,0.8560559566379139,0.018501962488637013,abstain,0.40883300243876874
+tqa_012_2,What is the name of the ancient city carved into pink sandstone cliffs in southern Jordan?,easy,1,0.686484520570741,0.31351547942925895,0.018501962488637013,fast_path,0.40945899672806263
+tqa_001_3,What is the capital city of Australia?,easy,1,0.6701804608947659,0.3298195391052341,0.018501962488637013,fast_path,0.40991700370796025
+tqa_002_3,Who wrote the play Romeo and Juliet?,easy,1,0.7069188301649367,0.29308116983506327,0.018501962488637013,fast_path,0.40633299795445055
+tqa_003_3,What element has the chemical symbol Fe?,easy,1,0.6599536290141723,0.3400463709858277,0.018501962488637013,fast_path,0.41120800597127527
+tqa_004_3,In what year did the Apollo 11 mission land on the Moon?,medium,1,0.36550720711002876,0.6344927928899713,0.018501962488637013,uncertain,0.41083300311584026
+tqa_005_3,Which French biologist and chemist developed the process of pasteurization?,medium,0,0.37252249660370823,0.6274775033962918,0.018501962488637013,uncertain,0.40750000334810466
+tqa_006_3,What is the deepest lake in the world?,medium,0,0.4146061383441051,0.5853938616558949,0.018501962488637013,uncertain,0.4102079983567819
+tqa_007_3,Who was the Byzantine emperor during the Nika riots in 532 AD?,hard,0,0.11345678189338118,0.8865432181066188,0.018501962488637013,abstain,0.4105830012122169
+tqa_008_3,What is the term for the hypothetical boundary surrounding a black hole from which nothing can escape?,medium,1,0.3971458596578683,0.6028541403421317,0.018501962488637013,uncertain,0.41120800597127527
+tqa_009_3,Which treaty ended the Thirty Years' War in Europe in 1648?,hard,0,0.13583923915946106,0.8641607608405389,0.018501962488637013,abstain,0.40962500497698784
+tqa_010_3,What is the exact chromosomal anomaly responsible for Cri du Chat syndrome?,hard,0,0.17018519728905546,0.8298148027109445,0.018501962488637013,abstain,0.41383400093764067
+tqa_011_3,Who formulated the mathematical theorem stating that every planar graph is 4-colorable?,hard,0,0.1439440433620861,0.8560559566379139,0.018501962488637013,abstain,0.47879198973532766
+tqa_012_3,What is the name of the ancient city carved into pink sandstone cliffs in southern Jordan?,easy,1,0.686484520570741,0.31351547942925895,0.018501962488637013,fast_path,0.43037500290665776
+tqa_001_4,What is the capital city of Australia?,easy,1,0.6701804608947659,0.3298195391052341,0.018501962488637013,fast_path,0.41533300827722996
+tqa_002_4,Who wrote the play Romeo and Juliet?,easy,1,0.7069188301649367,0.29308116983506327,0.018501962488637013,fast_path,0.4147500003455207
