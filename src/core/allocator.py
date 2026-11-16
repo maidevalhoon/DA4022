@@ -3,17 +3,16 @@ Uncertainty-Calibrated Allocation (UCA) - our contribution.
 
 The setting.  A question can be answered at several memory levels: 0, 1, 2, 4 or
 8 retrieved passages in the prompt.  More passages cost more KV-cache memory
-and usually help.  The total memory is limited, so not every question can have
-the maximum.  Who should get how much?
+and usually help.  Memory is limited, so not every question can have the
+maximum.  Who should get how much?
 
 Two ways to use uncertainty for this are implemented here.
 
 A) ESCALATION (the main method).
-   Start every question at the cheapest level.  After each level, read the
-   model's confidence.  If the model is confident enough, stop and answer;
-   otherwise give it the next level of memory and check again.
-   "Confident enough" is a single threshold on a calibrated probability, and
-   the threshold is chosen so that the average memory meets the budget.
+   Start every question with no passages.  After each level, read the model's
+   confidence.  If the model is confident enough, answer; otherwise give it the
+   next level of memory and check again, up to a maximum level.
+   Two knobs: the confidence threshold and the maximum level.
 
 B) ONE-SHOT ALLOCATION (the simpler variant we tried first).
    Read the confidence once, before retrieving anything, and decide the level
@@ -54,40 +53,32 @@ class Calibrator:
 # --------------------------------------------------------------------------
 # A) Escalation
 # --------------------------------------------------------------------------
-def escalate(p_correct: np.ndarray, threshold: float) -> np.ndarray:
+def fit_calibrators(confidence: np.ndarray, correct: np.ndarray) -> List[Calibrator]:
+    """
+    One calibration curve per check level c:
+        confidence read at level c  ->  P(the answer at level c is correct).
+    confidence: [n, n_checks]   correct: [n, n_levels]   (calibration questions)
+    """
+    return [Calibrator().fit(confidence[:, c], correct[:, c]) for c in range(confidence.shape[1])]
+
+
+def probability_correct(calibrators: List[Calibrator], confidence: np.ndarray) -> np.ndarray:
+    """Apply the curves: confidence [m, n_checks] -> P(correct) [m, n_checks]."""
+    return np.column_stack([calibrators[c].predict(confidence[:, c])
+                            for c in range(len(calibrators))])
+
+
+def escalate(p_correct: np.ndarray, threshold: float, max_level: int) -> np.ndarray:
     """
     p_correct[i, c] = calibrated probability that question i is answered
-    correctly at check level c (there is a check at every level except the last).
+    correctly at level c.
 
     Each question stops at the first level where p_correct >= threshold.
-    Questions that are never confident end at the last level.
+    A question that is never confident stops at max_level anyway.
     Returns the final level index for every question.
     """
-    confident = p_correct >= threshold
-    n_checks = p_correct.shape[1]
-    return np.where(confident.any(axis=1), confident.argmax(axis=1), n_checks)
-
-
-def escalation_curve(p_correct: np.ndarray, correct: np.ndarray, tokens: np.ndarray,
-                     thresholds: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """Average memory (tokens) and accuracy of escalation at each threshold."""
-    rows = np.arange(len(correct))
-    levels = [escalate(p_correct, t) for t in thresholds]
-    return (np.array([tokens[rows, lv].mean() for lv in levels]),
-            np.array([correct[rows, lv].mean() for lv in levels]))
-
-
-def threshold_for_budget(p_correct: np.ndarray, correct: np.ndarray, tokens: np.ndarray,
-                         budget: float, thresholds: np.ndarray) -> float:
-    """
-    Pick the threshold on calibration data: among the thresholds whose average
-    memory fits in the budget, take the most accurate one.
-    """
-    memory, accuracy = escalation_curve(p_correct, correct, tokens, thresholds)
-    affordable = memory <= budget + 1e-9
-    if not affordable.any():
-        return float(thresholds[np.argmin(memory)])
-    return float(thresholds[np.flatnonzero(affordable)[np.argmax(accuracy[affordable])]])
+    confident = p_correct[:, :max_level] >= threshold
+    return np.where(confident.any(axis=1), confident.argmax(axis=1), max_level)
 
 
 # --------------------------------------------------------------------------
@@ -157,21 +148,29 @@ def allocate(uncertainty: np.ndarray, edges: np.ndarray, table: np.ndarray,
 # --------------------------------------------------------------------------
 def best_fixed_mix(accuracy: np.ndarray, cost: np.ndarray, budget: float) -> List[Tuple[int, float]]:
     """
-    The best policy that ignores uncertainty: give a random fraction of the
-    questions level `a` and the rest level `b`.  Returns [(level, fraction), ...]
-    maximising expected accuracy within the budget.
+    The best policy that ignores uncertainty: give a random share of the
+    questions one fixed level and the rest another, so that the average cost
+    equals the budget.  Returns [(level, share of questions), ...].
     """
-    best_value, best_mix = -1.0, [(0, 1.0)]
-    for a in range(len(cost)):
-        if cost[a] <= budget and accuracy[a] > best_value:
-            best_value, best_mix = accuracy[a], [(a, 1.0)]
-        for b in range(a + 1, len(cost)):
-            if cost[a] <= budget < cost[b]:
-                share_b = (budget - cost[a]) / (cost[b] - cost[a])
-                value = (1 - share_b) * accuracy[a] + share_b * accuracy[b]
-                if value > best_value:
-                    best_value, best_mix = value, [(a, 1 - share_b), (b, share_b)]
-    return best_mix
+    accuracy, cost = np.asarray(accuracy, float), np.asarray(cost, float)
+    affordable = np.flatnonzero(cost <= budget + 1e-9)
+    if len(affordable) == 0:
+        return [(int(np.argmin(cost)), 1.0)]
+    single = affordable[np.argmax(accuracy[affordable])]
+    best_value, best = accuracy[single], [(int(single), 1.0)]
+    for b in np.flatnonzero(cost > budget + 1e-9):
+        share_b = (budget - cost[affordable]) / (cost[b] - cost[affordable])
+        value = (1 - share_b) * accuracy[affordable] + share_b * accuracy[b]
+        k = int(np.argmax(value))
+        if value[k] > best_value + 1e-12:
+            best_value = value[k]
+            best = [(int(affordable[k]), float(1 - share_b[k])), (int(b), float(share_b[k]))]
+    return best
+
+
+def fixed_mix_accuracy(accuracy: np.ndarray, cost: np.ndarray, budget: float) -> float:
+    """Accuracy of the best uncertainty-blind policy at a given average memory."""
+    return float(sum(share * accuracy[level] for level, share in best_fixed_mix(accuracy, cost, budget)))
 
 
 def allocate_oracle(correct: np.ndarray, level_cost: np.ndarray,

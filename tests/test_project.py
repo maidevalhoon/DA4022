@@ -8,7 +8,8 @@ anything that needs the real LLM is checked by running the experiments.
 import numpy as np
 
 from src.core.allocator import (Calibrator, allocate, allocate_oracle, best_fixed_mix, escalate,
-                                escalation_curve, fit_gain_table, threshold_for_budget)
+                                fit_calibrators, fit_gain_table, fixed_mix_accuracy,
+                                probability_correct)
 from src.core.internal_confidence import (attenuated_weights, internal_confidence,
                                           p_yes_naive_average, p_yes_top_right)
 from src.core.semantic_dpp import SemanticDPP, cluster_answers, lexical_diversity
@@ -89,34 +90,44 @@ def test_calibrator_turns_scores_into_probabilities():
 def test_escalation_stops_at_the_first_confident_level():
     p_correct = np.array([[0.9, 0.9, 0.9],            # confident straight away -> level 0
                           [0.2, 0.8, 0.1],            # confident after one upgrade -> level 1
-                          [0.1, 0.2, 0.3]])           # never confident -> last level (3)
-    assert escalate(p_correct, 0.7).tolist() == [0, 1, 3]
-    assert escalate(p_correct, 0.0).tolist() == [0, 0, 0]      # threshold 0: nobody gets memory
-    assert escalate(p_correct, 1.01).tolist() == [3, 3, 3]     # impossible threshold: everybody gets all
+                          [0.1, 0.2, 0.3]])           # never confident -> the maximum level
+    assert escalate(p_correct, 0.7, max_level=3).tolist() == [0, 1, 3]
+    assert escalate(p_correct, 0.7, max_level=1).tolist() == [0, 1, 1]      # capped at level 1
+    assert escalate(p_correct, 0.0, max_level=3).tolist() == [0, 0, 0]      # threshold 0: nobody escalates
+    assert escalate(p_correct, 1.01, max_level=3).tolist() == [3, 3, 3]     # never confident enough
 
 
-def _toy_escalation_problem(n=600, seed=0):
-    """Each question has a hidden 'needs k passages'; confidence is a noisy view of 'is it right now'."""
-    rng = np.random.default_rng(seed)
-    needed = rng.integers(0, 4, size=n)                        # level at which it becomes right
+def test_escalation_saves_memory_at_the_same_accuracy():
+    """Questions become right once they have enough passages; confidence is a noisy view of that."""
+    rng = np.random.default_rng(0)
+    n = 800
+    needed = rng.integers(0, 4, size=n)                        # level at which a question becomes right
     correct = np.arange(4)[None, :] >= needed[:, None]
-    p_correct = np.clip(correct[:, :3] * 0.8 + 0.1 + 0.1 * rng.normal(size=(n, 3)), 0, 1)
-    tokens = np.tile(np.array([50.0, 200.0, 350.0, 650.0]), (n, 1))
-    return p_correct, correct, tokens
+    confidence = correct[:, :3] * 1.0 + 0.25 * rng.normal(size=(n, 3))
+    tokens = np.array([50.0, 200.0, 350.0, 650.0])
+    cal, test = slice(0, 400), slice(400, 800)
+
+    calibrators = fit_calibrators(confidence[cal], correct[cal])
+    p_correct = probability_correct(calibrators, confidence[test])
+    assert p_correct.shape == (400, 3) and p_correct.min() >= 0 and p_correct.max() <= 1
+
+    level = escalate(p_correct, 0.7, max_level=2)
+    rows = np.arange(400)
+    accuracy, memory = correct[test][rows, level].mean(), tokens[level].mean()
+    everyone_gets_2 = correct[test, 2].mean()
+    assert accuracy > everyone_gets_2 - 0.03                   # about the same accuracy ...
+    assert memory < 0.8 * tokens[2]                            # ... with clearly less memory
+    # and better than any uncertainty-blind mix of fixed levels at that memory
+    assert accuracy > fixed_mix_accuracy(correct[test].mean(axis=0), tokens, memory) + 0.05
 
 
-def test_escalation_beats_fixed_levels_on_the_same_budget():
-    p_correct, correct, tokens = _toy_escalation_problem()
-    thresholds = np.linspace(0, 1.01, 102)
-    budget = 350.0                                              # what "everyone gets level 2" costs
-    t = threshold_for_budget(p_correct[:300], correct[:300], tokens[:300], budget, thresholds)
-    memory, accuracy = escalation_curve(p_correct[300:], correct[300:], tokens[300:], np.array([t]))
-    assert memory[0] <= budget * 1.1
-    assert accuracy[0] > correct[300:, 2].mean() + 0.05         # clearly better than fixed level 2
-
-    mix = best_fixed_mix(correct.mean(axis=0), tokens[0], budget)
+def test_best_fixed_mix_spends_exactly_the_budget():
+    accuracy, cost = np.array([0.3, 0.5, 0.6]), np.array([50.0, 200.0, 350.0])
+    mix = best_fixed_mix(accuracy, cost, 275.0)
     assert np.isclose(sum(share for _, share in mix), 1.0)
-    assert sum(share * tokens[0][level] for level, share in mix) <= budget + 1e-9
+    assert np.isclose(sum(share * cost[level] for level, share in mix), 275.0)
+    assert np.isclose(fixed_mix_accuracy(accuracy, cost, 275.0), 0.55)
+    assert fixed_mix_accuracy(accuracy, cost, 200.0) == 0.5
 
 
 def _toy_allocation_problem(n=400, seed=0):
