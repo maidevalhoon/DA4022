@@ -1,4 +1,4 @@
-# UCA — Uncertainty-Calibrated Allocation of KV-cache memory
+# UCA - Uncertainty-Calibrated Allocation of KV-cache memory
 
 DA4022 course project 7: *Can we come up with a method to use uncertainty for
 optimal memory allocation?*
@@ -9,12 +9,15 @@ Every question starts with no passages; it only gets more memory while the
 model is still unsure. Confident questions stay cheap, and the saved memory is
 exactly what a fixed "same for everyone" setting wastes.
 
-- **[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)** — the idea, the method, and the results, explained simply.
-- **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** — review of the earlier work, the plan, and the progress log.
+**Team:** Deval Singhal (230101035), Jayant Kumar (230101050), Sonal Mangesh Wagh (230108054), Sristi Vats (230122057), Shourya Veer Singh (230106069)
+
+- **[final_report/final_report.pdf](final_report/final_report.pdf)** - the final report (LaTeX source in the same folder).
+- **[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)** - the idea, the method, and the results, explained simply.
+- **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** - review of the earlier work, the plan, and the progress log.
 
 Built on two papers:
-- **Paper A** — *Query-Level Uncertainty in Large Language Models*, Chen, de Melo, Suchanek, Varoquaux, ICLR 2026 (Internal Confidence).
-- **Paper B** — *SemanticDPP: Efficient Uncertainty Quantification in LLMs*, anonymous, under review at ICLR 2026.
+- **Paper A** - *Query-Level Uncertainty in Large Language Models*, Chen, de Melo, Suchanek, Varoquaux, ICLR 2026 (Internal Confidence).
+- **Paper B** - *SemanticDPP: Efficient Uncertainty Quantification in LLMs*, anonymous, under review at ICLR 2026.
 
 ## Setup
 
@@ -53,7 +56,7 @@ Step 1. Streams 600 TriviaQA questions, retrieves the top-8 passages for each wi
 ```bash
 python -m src.experiments.collect --limit 400
 ```
-Step 2. Runs the real model on 400 questions at every memory level (0, 1, 2, 4, 8 passages): the answer, its probability, Internal Confidence, and 5 sampled answers for SemanticDPP. Writes `results/runs.jsonl` and `results/runs.npz`. Slow (about 20 s per question on the M1, so over two hours) but resumable — run it again and it continues. Also already included. On an 8 GB machine, close other apps and do not start a second model process while it runs.
+Step 2. Runs the real model on 400 questions at every memory level (0, 1, 2, 4, 8 passages): the answer, its probability, Internal Confidence, and 5 sampled answers for SemanticDPP. Writes `results/runs.jsonl` and `results/runs.npz`. Slow (about 20 s per question on the M1, so over two hours) but resumable - run it again and it continues. Also already included. On an 8 GB machine, close other apps and do not start a second model process while it runs.
 
 ```bash
 python -m src.experiments.analyze
@@ -88,6 +91,7 @@ src/experiments/                 prepare_data, collect, analyze, demo
 tests/test_project.py            unit tests
 data/triviaqa_rag.json           600 questions with retrieved passages (400 used for experiments, the rest for the demo)
 results/                         saved model runs, summary.json, figures/
+final_report/                    final report: final_report.tex and the compiled PDF
 temperory/                       the two papers and the course brief
 mid_report/, MID_EVALUATION.*    mid-term submission (kept as submitted)
 ```

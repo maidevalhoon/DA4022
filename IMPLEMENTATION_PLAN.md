@@ -1,6 +1,6 @@
 # Implementation plan and progress log
 
-**Project 7 — Uncertainty for optimal memory allocation (DA4022)**
+**Project 7 - Uncertainty for optimal memory allocation (DA4022)**
 Final report, video and working code are due **26 November 2026**.
 
 This file is the working document: what we found when we reviewed the earlier
@@ -82,26 +82,26 @@ number of tokens in the prompt. Retrieved passages are most of the prompt. So:
 | 9 | Analysis: signal quality, accuracy vs memory, time cost, figures | `results/summary.json`, `results/figures/` | ✅ 17 Nov |
 | 10 | Live demo on unseen questions | `src/experiments/demo.py` | ✅ 17 Nov |
 | 11 | Write-up of idea, method and results | `PROJECT_OVERVIEW.md` | ✅ 17 Nov |
-| 12 | Final report (PDF) | — | ⬜ team, from PROJECT_OVERVIEW.md |
-| 13 | Presentation video | — | ⬜ team |
+| 12 | Final report (LaTeX and PDF) | `final_report/` | ✅ 17 Nov |
+| 13 | Presentation video | - | ⬜ team |
 
 ---
 
 ## 4. Progress log
 
-**16 Nov, afternoon — review and reset.**
+**16 Nov, afternoon - review and reset.**
 Read all the existing code and both papers. Found that every reported number
 came from the mock mode (Section 1). Decided to restart the experiments on a
 real model and to cut the design down to something we can run and explain.
 
-**16 Nov — model and data.**
+**16 Nov - model and data.**
 Qwen2.5-1.5B-Instruct runs on the M1 GPU in half precision. Measured the KV
 cache directly from the model's cache tensors: 28,672 bytes per token, which
 matches the formula 2 × 28 layers × 2 KV heads × 128 dims × 2 bytes. Built the
 TriviaQA subset: 600 questions, Wikipedia evidence cut into 100-word passages,
 top 8 by BM25.
 
-**16 Nov — first attempt: decide once, before retrieval.**
+**16 Nov - first attempt: decide once, before retrieval.**
 Ran 120 questions with closed-book Internal Confidence and SemanticDPP, and an
 allocator that gives more passages to less confident questions. It did not beat
 random allocation. The reason turned out to be basic: about three quarters of
@@ -111,29 +111,29 @@ perfect closed-book signal would have gained only about 2 points on average.
 Lesson: the useful question is not "is this question hard?" but "is the memory
 I have given it so far enough?".
 
-**16 Nov — a mistake worth recording.**
+**16 Nov - a mistake worth recording.**
 We started a small test while the main run was going. Two copies of the model
 do not fit in 8 GB; the laptop froze and the run was lost. Since then: one
 model process at a time, checkpoints every 10 questions, and the GPU cache is
 released after every question (without that, time per question doubled).
 
-**16 Nov, evening — second design: escalation.**
+**16 Nov, evening - second design: escalation.**
 Re-collected with confidence read at every memory level, not only before
 retrieval. Rewrote sampling so that the 5 sampled answers are decoded from the
 prompt's cached keys and values instead of re-reading the prompt 5 times: the
 sampling cost at 4 passages dropped from 7.1 s to 1.4 s, and it no longer needs
 5 copies of the prompt in memory.
 
-**16 Nov, night — what did not work, part two.**
+**16 Nov, night - what did not work, part two.**
 With the first 100–200 questions we tried two cleverer policies: a rule based
 on "expected accuracy gain per extra token", and choosing a separate cutoff for
 every memory budget on the calibration half. Both looked good on calibration
-questions and worse on test questions — with only 100–200 calibration questions
+questions and worse on test questions - with only 100–200 calibration questions
 there are too many settings to choose between. We went back to the simplest
 rule (one threshold, one maximum level) and report whole curves on held-out
 questions instead of hand-picked operating points.
 
-**17 Nov, 00:08 — full run finished.**
+**17 Nov, 00:08 - full run finished.**
 400 questions × 5 memory levels in 2 hours on the M1 (about 18 s per question).
 Analysis on 20 random 200/200 halvings:
 
@@ -142,7 +142,7 @@ Analysis on 20 random 200/200 halvings:
 - Signal quality (AUROC, no passages → with passages): Internal Confidence
   0.64 → 0.75, SemanticDPP 0.83 → 0.71–0.74, answer probability 0.87 → 0.77–0.79.
 - Escalation with answer probability, at most 2 passages, threshold 0.70:
-  57.6% accuracy with 7.8 MB, against 57.5% with 9.8 MB for "everyone gets 2" —
+  57.6% accuracy with 7.8 MB, against 57.5% with 9.8 MB for "everyone gets 2" -
   21% less KV memory, and +2.6 ± 1.0 points over the best uncertainty-blind mix
   at the same memory. Up to +7.2 ± 1.8 points at very small budgets.
 - With at most 8 passages the saving is 36–58% but accuracy drops by 1–5 points;
@@ -150,21 +150,25 @@ Analysis on 20 random 200/200 halvings:
 - Deciding once before retrieval: no measurable gain (+0.3 ± 1.0).
 - Cost: the checks add time (1.75 s vs 1.05 s per question in the best case).
 
-**17 Nov — demo and write-up.**
+**17 Nov - demo and write-up.**
 The demo ran on 10 questions that were not part of the experiments: 5 of 10
 correct using 81% of the memory of "everyone gets 2". `PROJECT_OVERVIEW.md`
 written with the method, all results, the limits, and viva notes. 13 unit tests
 pass.
 
+**17 Nov - final report.**
+Wrote the report in LaTeX from the overview: same results, plus the equations
+for both papers, the algorithm, and a section on what changed since the
+mid-term. Compiles with `tectonic final_report.tex` from the `final_report` folder.
+
 ---
 
 ## 5. What is left for the team
 
-- **Final report (40%)**: `PROJECT_OVERVIEW.md` is written as the source for it —
-  same order: problem, background, method, setup, results, limits. Turn it into
-  the required format and add the team details. State clearly that the
-  mid-term numbers were from a simulation and are replaced by these.
-- **Video (25%)**: suggested flow — the problem in one slide; the two papers in
+- **Final report (40%)**: written in `final_report/final_report.tex`, compiled to
+  `final_report/final_report.pdf` (12 pages). Everyone should read it once and
+  check the team details before submission.
+- **Video (25%)**: suggested flow - the problem in one slide; the two papers in
   one slide each; our method with the `where_questions_stop` figure; the
   `accuracy_vs_memory` figure; a screen recording of
   `python -m src.experiments.demo --n 10`; limits and what we would do next.

@@ -1,6 +1,10 @@
-# Uncertainty for Optimal Memory Allocation — project overview
+# Uncertainty for Optimal Memory Allocation - project overview
 
-**DA4022, Project 7.** Team: Deval Singhal, Jayant Kumar, Sonal Mangesh Wagh, Sristi Vats, Shourya Veer Singh.
+**DA4022, Project 7.**
+
+**Team:** Deval Singhal (230101035), Jayant Kumar (230101050), Sonal Mangesh Wagh (230108054), Sristi Vats (230122057), Shourya Veer Singh (230106069).
+
+The final report is in [final_report/final_report.pdf](final_report/final_report.pdf) (LaTeX source next to it).
 
 This document explains the whole project in plain language: the problem, the two
 papers, our method, how we tested it, what we found, and where it falls short.
@@ -18,8 +22,8 @@ replace the numbers in the mid-term report, which came from a simulation.
    questions waste memory and hard ones may not get enough.
 3. We let the model tell us how sure it is, and we give a question more memory
    **only while the model is still unsure**.
-4. To measure "how sure", we use the two assigned papers — Internal Confidence
-   and SemanticDPP — plus the probability the model gives its own answer.
+4. To measure "how sure", we use the two assigned papers - Internal Confidence
+   and SemanticDPP - plus the probability the model gives its own answer.
 5. On 400 TriviaQA questions, this reaches the same accuracy as "2 passages for
    everyone" with **21% less KV-cache memory**, and at very small memory budgets
    it is up to **7 accuracy points better** than any policy that ignores uncertainty.
@@ -47,7 +51,7 @@ only 3.1 GB. This is why prompt length is a memory problem.
 
 **Retrieval (RAG).** To answer factual questions, a system looks up passages of
 text and pastes them into the prompt. More passages mean a better chance that the
-answer is in there — and a proportionally bigger KV cache. So in this setting,
+answer is in there - and a proportionally bigger KV cache. So in this setting,
 
 > **memory given to a question = number of passages in its prompt.**
 
@@ -63,7 +67,7 @@ useless, 1.0 is perfect).
 
 ## 3. The two papers
 
-### Paper A — Internal Confidence (Chen, de Melo, Suchanek, Varoquaux, ICLR 2026)
+### Paper A - Internal Confidence (Chen, de Melo, Suchanek, Varoquaux, ICLR 2026)
 
 *Idea:* before generating anything, ask the model
 "Respond only with Yes or No: can you answer this question accurately?" and
@@ -75,10 +79,10 @@ giving a P(Yes). These are averaged with weights that are largest at the last
 layer and last token and fall off quickly ("attenuated encoding", α = 1). The
 result is one number, the Internal Confidence (IC).
 
-*Good:* very cheap — no text is generated. *Limit:* the paper uses it for a
+*Good:* very cheap - no text is generated. *Limit:* the paper uses it for a
 single yes/no decision (retrieve or not) made once, before retrieval.
 
-### Paper B — SemanticDPP (anonymous, under review at ICLR 2026)
+### Paper B - SemanticDPP (anonymous, under review at ICLR 2026)
 
 *Idea:* sample several answers to the same question. If they all mean the same
 thing, the model is sure. If they scatter, it is guessing.
@@ -105,7 +109,7 @@ memory** a question should get. That is the question the course asked us.
 ### 4.1 The idea
 
 Think of a student in an open-book exam. For an easy question they answer from
-memory. If unsure, they open one page of the book and try again. Still unsure —
+memory. If unsure, they open one page of the book and try again. Still unsure -
 they read more. They stop as soon as they are confident, and they never read the
 whole book for a question they already know.
 
@@ -127,7 +131,7 @@ There are only two settings: the **threshold** (how sure is sure enough) and the
 some accuracy; a high threshold is cautious. The KV-cache memory a question ends
 up using is the memory of the level where it stops.
 
-### 4.2 Calibration — the "C" in UCA
+### 4.2 Calibration - the "C" in UCA
 
 Raw confidence scores are not probabilities. An IC of 0.6, a log-probability of
 −0.4 and a DPP score of −20 cannot be compared with each other, or with a
@@ -142,7 +146,7 @@ staircase (isotonic regression) on held-out questions that maps
 |---|---|---|
 | **Internal Confidence** | Paper A, asked again at every level with the passages in the prompt (our extension; the paper only asks before retrieval) | one forward pass, no generation |
 | **SemanticDPP** | Paper B, on 5 sampled answers at every level | 5 short sampled answers |
-| **Answer probability** | probability the model gave to its own greedy answer — a standard baseline (Paper A calls it MSP) | nothing; it comes with the answer |
+| **Answer probability** | probability the model gave to its own greedy answer - a standard baseline (Paper A calls it MSP) | nothing; it comes with the answer |
 | **All three combined** | average of the three calibrated probabilities | all of the above |
 
 ### 4.4 What we compare against
@@ -191,7 +195,7 @@ Two implementation points that mattered on small hardware:
 
 ## 6. Results
 
-### 6.1 More memory helps — but not everyone, and not always
+### 6.1 More memory helps - but not everyone, and not always
 
 | Passages for everyone | Accuracy | Prompt tokens | KV cache per question | Time per question |
 |---|---|---|---|---|
@@ -224,11 +228,11 @@ AUROC for telling right answers from wrong ones, on held-out questions:
 | Confidence signal | 0 passages | 1 | 2 | 4 |
 |---|---|---|---|---|
 | Internal Confidence (Paper A) | 0.64 | 0.74 | 0.75 | 0.75 |
-| — P(Yes), last layer and token only | 0.60 | 0.73 | 0.75 | 0.75 |
-| — P(Yes), plain average | 0.67 | 0.73 | 0.73 | 0.75 |
+| - P(Yes), last layer and token only | 0.60 | 0.73 | 0.75 | 0.75 |
+| - P(Yes), plain average | 0.67 | 0.73 | 0.73 | 0.75 |
 | SemanticDPP (Paper B) | 0.83 | 0.74 | 0.73 | 0.71 |
-| — SemanticDPP, untrained kernel | 0.83 | 0.74 | 0.73 | 0.71 |
-| — sampled answers agree (string match) | 0.84 | 0.74 | 0.72 | 0.71 |
+| - SemanticDPP, untrained kernel | 0.83 | 0.74 | 0.73 | 0.71 |
+| - sampled answers agree (string match) | 0.84 | 0.74 | 0.72 | 0.71 |
 | Answer probability | 0.87 | 0.78 | 0.77 | 0.79 |
 
 (Spread over the 20 halvings is about ±0.02–0.03 for every cell.)
@@ -275,7 +279,7 @@ dashed line means: more accuracy from the same KV-cache memory.**
 
 The same information as numbers, at one fixed threshold (stop when p ≥ 0.70):
 
-**At most 2 passages** — compare with "everyone gets 2": 57.5% accuracy, 9.8 MB, 1.05 s
+**At most 2 passages** - compare with "everyone gets 2": 57.5% accuracy, 9.8 MB, 1.05 s
 
 | Confidence signal | Accuracy | KV cache | Memory saved | Accuracy change | Gain over best blind mix at the same memory | Time |
 |---|---|---|---|---|---|---|
@@ -284,7 +288,7 @@ The same information as numbers, at one fixed threshold (stop when p ≥ 0.70):
 | Internal Confidence | 57.2% | 8.7 MB | 12% | −0.3 ± 0.7 | +1.0 ± 0.9 | 1.72 s |
 | All three combined | 57.6% | 8.6 MB | 12% | +0.1 ± 0.6 | +1.5 ± 1.1 | 5.51 s |
 
-**At most 8 passages** — compare with "everyone gets 8": 65.9% accuracy, 34.4 MB, 3.37 s
+**At most 8 passages** - compare with "everyone gets 8": 65.9% accuracy, 34.4 MB, 3.37 s
 
 | Confidence signal | Accuracy | KV cache | Memory saved | Accuracy change | Gain over best blind mix at the same memory | Time |
 |---|---|---|---|---|---|---|
@@ -300,7 +304,7 @@ How to read these:
   57.5%) while holding 21% less KV cache. At a slightly lower threshold (0.60)
   the saving is 29% for the same accuracy (57.4%, 7.0 MB).
 - **The biggest wins are at the smallest budgets.** With answer probability and
-  at most 1 passage (threshold 0.25), we get 48.8% from 3.5 MB — **7.2 ± 1.8
+  at most 1 passage (threshold 0.25), we get 48.8% from 3.5 MB - **7.2 ± 1.8
   points more** than the best blind policy at that memory. At about the memory of
   "1 passage for everyone" (5.7 MB, 52.0%), escalation up to 2 passages reaches
   56.0% with 5.9 MB (+4.0 ± 1.5 at equal memory). This is the regime where the decision is mostly "does this
@@ -324,7 +328,7 @@ stop with no passages and another 21% after one.
 Our first design read the closed-book confidence once and assigned passages from
 it. Averaged over all budgets, its gain over the best blind mix was
 **+0.3 ± 1.0** points with Internal Confidence and **0.0 ± 1.3** with an
-IC-then-SemanticDPP cascade — nothing. The reason is simple once seen: two
+IC-then-SemanticDPP cascade - nothing. The reason is simple once seen: two
 thirds of the questions are wrong without passages and need retrieval anyway, and
 closed-book confidence says nothing about *how many* passages will be enough.
 Confidence has to be re-read after the memory is given. That observation is what
@@ -357,7 +361,7 @@ recomputed. We did not implement that (see Section 8).
 
 ## 7. What we learned, and the limits
 
-1. **Uncertainty is most useful for the first decision** — whether a question
+1. **Uncertainty is most useful for the first decision** - whether a question
    needs any retrieved memory. There it gives clear gains (up to 7 points at
    equal memory).
 2. **Uncertainty cannot tell which questions are hopeless.** About 22% of

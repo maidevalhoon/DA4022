@@ -402,7 +402,7 @@ def figure_where_questions_stop(summary: dict, path: str) -> dict:
             ("Escalation, at most 2", np.array(summary["escalation"][PROB]["2"]["level_mix"][index])),
             ("Everyone gets 8", np.eye(len(passages))[4]),
             ("Escalation, at most 8", np.array(summary["escalation"][PROB]["8"]["level_mix"][index]))]
-    fig, ax = _axes("Where questions stop (confidence = answer probability, threshold 0.70)",
+    fig, ax = _axes("Where questions stop (answer probability, threshold 0.70)",
                     "Share of questions (%)", "", figsize=(7.6, 3.4))
     table = {}
     for y, (label, mix) in enumerate(rows[::-1]):
