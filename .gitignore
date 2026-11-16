@@ -59,3 +59,7 @@ huggingface/
 # Environment variables & secrets
 .env
 .env.*
+
+# Local run logs and test cache
+results/*.log
+.pytest_cache/
