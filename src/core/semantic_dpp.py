@@ -1,334 +1,157 @@
 """
-SemanticDPP and SemanticDPP-C.
+SemanticDPP - Paper B, "SemanticDPP: Efficient Uncertainty Quantification in LLMs"
+(anonymous submission, under review at ICLR 2026).
 
-Direct implementation of Paper B:
-"SemanticDPP: Efficient Uncertainty Quantification in LLMs"
-(Anonymous, Google DeepMind — ICLR 2026)
+Idea: sample a few answers to the same question.  If they all mean the same
+thing the model is sure; if they scatter, it is guessing.  "Scatter" is measured
+with a determinantal point process (DPP) on the answers' embeddings:
 
-Key Paper Details Implemented:
-- SemanticSubspaceProjector: φ: R^d -> R^p (single-layer NN, orthogonal init)
-- DPP L-ensemble kernel (Eq. 1 in Paper B):
-    K(x_i, x_j) = exp(-α ||φ(x_i) - φ(x_j)||²)
-- Likelihood of subset Y (L-ensemble DPP):
-    P_L(Y) = det(L_Y) / det(L + I)
-- Training objective (Marginal Likelihood maximization):
-    log P_L(Y) = log det(L_Y) - log det(L + I)
-- Uncertainty score (Eq. 4 in Paper B):
-    U(S) = log det(L_S + I) - log det(2I)
-- SemanticDPP-C: soft clustering via greedy MAP selection and trace(K_marginal)
+    kernel      L[i, j] = exp(-alpha * || phi(x_i) - phi(x_j) ||^2)          (Eq. 1)
+    training    maximise  log det(L_Y) - log det(L + I)                      (Eq. 2-3)
+                where Y holds one answer from each distinct-meaning cluster
+    uncertainty log det(K_S),   K = L (L + I)^-1                             (Eq. 4)
 
-UCA Novel Extensions Beyond Paper B:
-1. Eigenspectrum Extraction:
-   Exposes all eigenvalues {σ_1, ..., σ_m} of L via torch.linalg.eigvalsh.
-   In UCA, contested dimensions (high σ_i) require high fidelity, while
-   stable dimensions (low σ_i) allow aggressive compression.
-2. Cluster Count as Beam Width Floor:
-   SemanticDPP-C cluster count k = max(1, round(trace(K_marginal))) directly
-   determines the generation beam width floor in UCA.
+phi is a small one-hidden-layer network that learns which directions of the
+embedding space carry meaning.  Higher log det = more diverse answers = more
+uncertain.
+
+Two honest simplifications compared with the paper (both stated in the report):
+  * Pseudo-labels: the paper clusters sampled answers with an entailment model.
+    TriviaQA answers are a few words long, so we cluster by normalised string
+    match instead (cluster_answers below).  No second model needed.
+  * Whitening: we whiten with PCA to a few dozen dimensions because we only
+    have a few hundred calibration questions.
 """
 
-import math
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List
+
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+
+from src.evaluation.data import normalize
 
 
-class SemanticSubspaceProjector(nn.Module):
+# --------------------------------------------------------------------------
+# Pseudo-labels: which sampled answers say the same thing?
+# --------------------------------------------------------------------------
+def cluster_answers(answers: List[str]) -> List[int]:
     """
-    Learned projection φ: R^d -> R^p mapping internal LLM activations
-    to a low-dimensional semantic manifold.
-    Initialized with orthogonal weights per Paper B Section 3.1.
-    Outputs are L2-normalized onto the unit hypersphere.
+    "Leader" clustering (the algorithm Paper B uses, Section 2.1), with a string
+    test instead of an entailment model: two answers match if one contains the
+    other after normalisation ("Paris" ~ "paris, france").
+    Returns one cluster id per answer.
     """
-
-    def __init__(self, d: int = 4096, p: int = 256):
-        super().__init__()
-        self.d = d
-        self.p = p
-        self.proj = nn.Linear(d, p, bias=False)
-        nn.init.orthogonal_(self.proj.weight)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Projects and normalizes input embeddings onto unit sphere."""
-        projected = self.proj(x)
-        return F.normalize(projected, p=2, dim=-1)
-
-
-class SemanticDPP:
-    """
-    SemanticDPP uncertainty estimator + SemanticDPP-C clustering.
-    Computes kernel matrix, log-determinant uncertainty, eigenspectrum,
-    and semantic cluster count.
-    """
-
-    def __init__(
-        self,
-        model: Optional[object] = None,
-        tokenizer: Optional[object] = None,
-        projector: Optional[SemanticSubspaceProjector] = None,
-        hidden_dim: int = 4096,
-        subspace_dim: int = 256,
-        alpha: float = 1.0,
-        m: int = 3,
-        temperature: float = 0.8,
-        eps: float = 1e-6,
-        device: str = "auto",
-        mock_mode: bool = False,
-        seed: int = 42,
-    ):
-        self.alpha = float(alpha)
-        self.m = int(m)
-        self.temperature = float(temperature)
-        self.eps = float(eps)
-        self.mock_mode = mock_mode
-        self.seed = seed
-        self._rng = np.random.default_rng(seed)
-
-        # Device selection
-        if device == "auto":
-            if torch.cuda.is_available():
-                self.device = "cuda"
-            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                self.device = "mps"
-            else:
-                self.device = "cpu"
-        else:
-            self.device = device
-
-        self.hidden_dim = hidden_dim
-        self.subspace_dim = subspace_dim
-
-        if projector is not None:
-            self.projector = projector.to(self.device)
-        else:
-            self.projector = SemanticSubspaceProjector(d=hidden_dim, p=subspace_dim).to(self.device)
-
-        self.model = model
-        self.tokenizer = tokenizer
-        if model is None or mock_mode:
-            self.mock_mode = True
-
-    def compute_kernel_matrix(self, embeddings: torch.Tensor) -> torch.Tensor:
-        """
-        DPP L-ensemble kernel matrix (Paper B Eq. 1):
-            K(x_i, x_j) = exp(-α ||φ(x_i) - φ(x_j)||²)
-
-        Args:
-            embeddings: Tensor of shape (m, d)
-        Returns:
-            K: Tensor of shape (m, m) with entries in (0, 1]
-        """
-        if embeddings.dim() != 2:
-            raise ValueError(f"Expected 2D tensor (m, d), got shape {embeddings.shape}")
-
-        # Project to semantic manifold and normalize: (m, p)
-        projected = self.projector(embeddings.to(self.device))
-
-        # Pairwise squared Euclidean distance: ||u - v||²
-        diff = projected.unsqueeze(0) - projected.unsqueeze(1)  # (m, m, p)
-        sq_dist = torch.sum(diff ** 2, dim=-1)  # (m, m)
-
-        # RBF similarity kernel
-        K = torch.exp(-self.alpha * sq_dist)
-        return K
-
-    def compute_marginal_kernel(self, L: torch.Tensor) -> torch.Tensor:
-        """
-        Computes DPP marginal kernel:
-            K_marginal = L (L + I)⁻¹
-        """
-        m = L.shape[0]
-        I = torch.eye(m, device=L.device, dtype=L.dtype)
-        K_marg = L @ torch.linalg.inv(L + I)
-        return K_marg
-
-    def estimate_clusters_c(self, K: torch.Tensor) -> int:
-        """
-        SemanticDPP-C cluster count estimation (Paper B Algorithm 1):
-            k = max(1, round(trace(K_marginal)))
-        """
-        m = K.shape[0]
-        I = torch.eye(m, device=K.device, dtype=K.dtype)
-        L = K + self.eps * I
-        K_marg = self.compute_marginal_kernel(L)
-        trace_val = torch.trace(K_marg).item()
-        k = max(1, int(round(trace_val)))
-        return min(k, m)
-
-    def greedy_map_clustering(self, K: torch.Tensor) -> List[int]:
-        """
-        Greedy MAP selection (Paper B Algorithm 1):
-        Iteratively adds items that maximize log det(L_{Y U {j}}).
-        Returns list of selected cluster center indices.
-        """
-        m = K.shape[0]
-        I = torch.eye(m, device=K.device, dtype=K.dtype)
-        L = K + self.eps * I
-
-        selected = []
-        remaining = list(range(m))
-
-        # First item: highest self-similarity / quality
-        best_first = int(torch.argmax(torch.diag(L)).item())
-        selected.append(best_first)
-        remaining.remove(best_first)
-
-        while remaining:
-            best_cand = None
-            best_det = -float("inf")
-            for cand in remaining:
-                sub_indices = selected + [cand]
-                sub_L = L[np.ix_(sub_indices, sub_indices)]
-                det_val = torch.linalg.det(sub_L).item()
-                if det_val > best_det:
-                    best_det = det_val
-                    best_cand = cand
-
-            # Stop if adding items reduces determinant (diversity trade-off reached)
-            prev_L = L[np.ix_(selected, selected)]
-            prev_det = torch.linalg.det(prev_L).item()
-            if best_cand is not None and best_det > prev_det:
-                selected.append(best_cand)
-                remaining.remove(best_cand)
-            else:
+    leaders, labels = [], []
+    for answer in answers:
+        text = normalize(answer)
+        for cluster_id, leader in enumerate(leaders):
+            if text == leader or (text and leader and (text in leader or leader in text)):
+                labels.append(cluster_id)
                 break
-
-        return selected
-
-    def uncertainty_score_from_embeddings(
-        self, embeddings: torch.Tensor
-    ) -> Dict[str, Union[float, np.ndarray, int, torch.Tensor]]:
-        """
-        Compute full SemanticDPP uncertainty metrics from pre-extracted embeddings.
-        """
-        m = embeddings.shape[0]
-        K = self.compute_kernel_matrix(embeddings)
-
-        I = torch.eye(m, device=K.device, dtype=K.dtype)
-        L = K + self.eps * I
-
-        # Paper B Eq. 4: U(S) = log det(L_S + I) - log det(2I)
-        log_det_L_plus_I = torch.logdet(L + I).item()
-        log_det_2I = m * math.log(2.0)
-        log_det = float(log_det_L_plus_I - log_det_2I)
-
-        # UCA Key Extension 1: Full Eigenspectrum of L
-        eigenvalues = torch.linalg.eigvalsh(L)
-        eigenvalues_np = eigenvalues.detach().cpu().numpy()
-        eigenvalues_np = np.clip(eigenvalues_np, 0.0, None)
-
-        # UCA Key Extension 2: SemanticDPP-C cluster count
-        dpp_c_clusters = self.estimate_clusters_c(K)
-
-        # Normalized uncertainty in [0, 1] via sigmoid
-        uncertainty_norm = float(torch.sigmoid(torch.tensor(log_det / max(1, m), dtype=torch.float32)).item())
-
-        return {
-            "log_det": log_det,
-            "eigenvalues": eigenvalues_np,
-            "eigenvalues_desc": np.sort(eigenvalues_np)[::-1],
-            "kernel_matrix": K.detach().cpu(),
-            "uncertainty": uncertainty_norm,
-            "dpp_c_clusters": dpp_c_clusters,
-            "trace_k": float(torch.trace(K).item()),
-        }
-
-    def _sample_embeddings(self, query: str, difficulty: Optional[str] = None) -> torch.Tensor:
-        """Sample m responses using the LLM and extract mean-pooled last-layer hidden states."""
-        if self.mock_mode:
-            return self._sample_mock_embeddings(query, difficulty=difficulty)
-
-        inputs = self.tokenizer(query, return_tensors="pt").to(self.device)
-        sampled_vecs = []
-
-        with torch.no_grad():
-            for _ in range(self.m):
-                out = self.model.generate(
-                    **inputs,
-                    max_new_tokens=64,
-                    do_sample=True,
-                    temperature=self.temperature,
-                    output_hidden_states=True,
-                    return_dict_in_generate=True,
-                )
-                step_states = [step[-1][:, -1, :] for step in out.hidden_states]
-                stacked = torch.stack(step_states, dim=1)  # (1, n_tokens, hidden_dim)
-                mean_embedding = stacked.mean(dim=1).squeeze(0)  # (hidden_dim,)
-                sampled_vecs.append(mean_embedding)
-
-        return torch.stack(sampled_vecs, dim=0)  # (m, hidden_dim)
-
-    def _sample_mock_embeddings(self, query: str, difficulty: Optional[str] = None) -> torch.Tensor:
-        """
-        Generates realistic synthetic embeddings for testing.
-        Simulates:
-        - Confident queries: samples clustered close together (high kernel, low log_det).
-        - Uncertain queries: samples spread across diverse directions (low kernel, high log_det).
-        """
-        q_hash = abs(hash(query)) % 1000000
-        rng = np.random.default_rng(q_hash)
-
-        q_lower = query.lower()
-        if difficulty == "easy":
-            cluster_dispersion = 0.08  # Very tight cluster (confident)
-        elif difficulty == "hard":
-            cluster_dispersion = 0.95  # Diverse cluster (uncertain)
-        elif difficulty == "medium":
-            cluster_dispersion = 0.42  # Moderate dispersion
-        elif any(w in q_lower for w in ["what is", "capital", "who", "when"]):
-            cluster_dispersion = 0.15  # Low dispersion (confident)
-        elif any(w in q_lower for w in ["prove", "solve", "why", "difference"]):
-            cluster_dispersion = 0.85  # High dispersion (uncertain)
         else:
-            cluster_dispersion = 0.50
+            leaders.append(text)
+            labels.append(len(leaders) - 1)
+    return labels
 
-        # Base semantic direction
-        base_dir = rng.normal(0, 1, size=(self.hidden_dim,))
-        base_dir = base_dir / np.linalg.norm(base_dir)
 
-        embeddings = []
-        scale = cluster_dispersion / np.sqrt(self.hidden_dim)
-        for _ in range(self.m):
-            noise = rng.normal(0, scale, size=(self.hidden_dim,))
-            vec = base_dir + noise
-            vec = vec / np.linalg.norm(vec)
-            embeddings.append(vec)
+def lexical_diversity(answers: List[str]) -> float:
+    """Simple baseline: entropy of the string-match clusters (a cheap 'semantic entropy')."""
+    counts = np.bincount(cluster_answers(answers)).astype(float)
+    p = counts / counts.sum()
+    return float(-(p * np.log(p)).sum())
 
-        tensor_emb = torch.tensor(np.array(embeddings), dtype=torch.float32, device=self.device)
-        return tensor_emb
 
-    def uncertainty_score(
-        self, query: str, difficulty: Optional[str] = None
-    ) -> Dict[str, Union[float, np.ndarray, int, torch.Tensor]]:
-        """
-        Main end-to-end SemanticDPP uncertainty computation.
-        """
-        embeddings = self._sample_embeddings(query, difficulty=difficulty)
-        return self.uncertainty_score_from_embeddings(embeddings)
+# --------------------------------------------------------------------------
+# The DPP
+# --------------------------------------------------------------------------
+class SemanticDPP:
+    def __init__(self, pca_dim: int = 32, hidden: int = 64, out_dim: int = 8,
+                 alpha: float = 1.0, jitter: float = 1e-3,
+                 steps: int = 200, lr: float = 1e-2, weight_decay: float = 1e-3,
+                 trainable: bool = True, seed: int = 0):
+        self.pca_dim, self.alpha, self.jitter = pca_dim, alpha, jitter
+        self.steps, self.lr, self.weight_decay = steps, lr, weight_decay
+        self.trainable = trainable          # False -> phi is the identity (untrained baseline)
+        torch.manual_seed(seed)
+        self.phi = nn.Sequential(nn.Linear(pca_dim, hidden), nn.GELU(), nn.Linear(hidden, out_dim))
+        self.mean = self.components = self.scale = None
 
-    @staticmethod
-    def dpp_marginal_loss(
-        L: torch.Tensor,
-        cluster_indices: List[int],
-        eps: float = 1e-6,
-    ) -> torch.Tensor:
-        """
-        DPP Marginal Likelihood Loss for training projector φ (Paper B Section 3.1):
-            L_DPP = - (log det(L_Y) - log det(L + I))
-        Minimizing this loss maximizes the likelihood of observing cluster subset Y.
-        """
-        m = L.shape[0]
-        I = torch.eye(m, device=L.device, dtype=L.dtype)
-        reg_L = L + eps * I
+    # ------------------------------------------------------------- whitening
+    def _fit_whitening(self, flat: np.ndarray):
+        self.mean = flat.mean(axis=0)
+        _, singular, vt = np.linalg.svd(flat - self.mean, full_matrices=False)
+        self.components = vt[: self.pca_dim].T                          # [d, pca_dim]
+        self.scale = singular[: self.pca_dim] / np.sqrt(len(flat) - 1)   # std of each component
 
-        if not cluster_indices:
-            sub_logdet = torch.tensor(0.0, device=L.device)
+    def _whiten(self, embeddings: np.ndarray) -> torch.Tensor:
+        z = (embeddings.astype(np.float64) - self.mean) @ self.components / self.scale
+        return torch.tensor(z, dtype=torch.float32)
+
+    # ---------------------------------------------------------------- kernel
+    def _kernel(self, z: torch.Tensor) -> torch.Tensor:
+        """L-ensemble kernel for a batch of answer sets.  z: [..., m, pca_dim] -> [..., m, m]."""
+        if self.trainable:
+            z = self.phi(z)
         else:
-            idx = torch.tensor(cluster_indices, device=L.device, dtype=torch.long)
-            sub_L = reg_L[idx][:, idx]
-            sub_logdet = torch.logdet(sub_L)
+            z = z / np.sqrt(z.shape[-1])    # identity phi; keep distances on a sane scale
+        L = torch.exp(-self.alpha * torch.cdist(z, z) ** 2)
+        return L + self.jitter * torch.eye(z.shape[-2])
 
-        total_logdet = torch.logdet(reg_L + I)
-        return -(sub_logdet - total_logdet)
+    # ------------------------------------------------------------------- fit
+    def fit(self, embeddings: np.ndarray, clusters: np.ndarray) -> List[float]:
+        """
+        embeddings: [n_questions, m, d]   sampled-answer embeddings
+        clusters:   [n_questions, m]      pseudo-label cluster id of each answer
+        Returns the training loss curve.
+        """
+        n, m, d = embeddings.shape
+        self._fit_whitening(embeddings.reshape(n * m, d))
+        if not self.trainable:
+            return []
+
+        z = self._whiten(embeddings)
+        clusters = torch.tensor(clusters)
+        eye = torch.eye(m)
+        optimiser = torch.optim.Adam(self.phi.parameters(), lr=self.lr,
+                                     weight_decay=self.weight_decay)
+        losses = []
+        for _ in range(self.steps):
+            # Y = one random representative per cluster, encoded as a 0/1 mask.
+            random_rank = torch.rand(n, m)
+            best_in_cluster = torch.zeros(n, m).scatter_reduce(
+                1, clusters, random_rank, reduce="amax", include_self=False)
+            mask = (random_rank == best_in_cluster.gather(1, clusters)).float()
+
+            L = self._kernel(z)
+            # log det of the sub-matrix L_Y, written so it can be batched:
+            # keep rows/cols in Y, put 1 on the diagonal for the rest.
+            L_Y = mask.unsqueeze(2) * L * mask.unsqueeze(1) + torch.diag_embed(1 - mask)
+            log_likelihood = torch.logdet(L_Y) - torch.logdet(L + eye)      # Eq. 2
+            loss = -log_likelihood.mean()                                   # Eq. 3
+
+            optimiser.zero_grad()
+            loss.backward()
+            optimiser.step()
+            losses.append(loss.item())
+        return losses
+
+    # ----------------------------------------------------------------- score
+    @torch.no_grad()
+    def _eigenvalues(self, embeddings: np.ndarray) -> torch.Tensor:
+        L = self._kernel(self._whiten(embeddings))
+        return torch.linalg.eigvalsh(L).clamp(min=self.jitter)
+
+    def score(self, embeddings: np.ndarray) -> np.ndarray:
+        """
+        Uncertainty = log det(K_S) with K = L (L + I)^-1                    (Eq. 4)
+                    = sum_i log( lambda_i / (1 + lambda_i) )   over eigenvalues of L.
+        Accepts [m, d] or a batch [n, m, d].  Higher = more uncertain.
+        """
+        lam = self._eigenvalues(embeddings)
+        return (torch.log(lam) - torch.log1p(lam)).sum(dim=-1).numpy()
+
+    def expected_clusters(self, embeddings: np.ndarray) -> np.ndarray:
+        """trace(K): the DPP's estimate of how many distinct answers there are (Paper B, Alg. 1)."""
+        lam = self._eigenvalues(embeddings)
+        return (lam / (1 + lam)).sum(dim=-1).numpy()
