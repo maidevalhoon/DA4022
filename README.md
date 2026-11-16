@@ -1,137 +1,93 @@
-# UCA: Uncertainty-Calibrated Adaptive Compression
+# UCA — Uncertainty-Calibrated Allocation of KV-cache memory
 
-Implementation of **Uncertainty-Calibrated Adaptive Compression (UCA)** for optimal memory and compute allocation in LLMs, built on:
-- **Paper A:** *Query-Level Uncertainty in LLMs* (Chen et al., ICLR 2026)
-- **Paper B:** *SemanticDPP: Efficient Uncertainty Quantification in LLMs* (Hamer et al., Google DeepMind, ICLR 2026)
+DA4022 course project 7: *Can we come up with a method to use uncertainty for
+optimal memory allocation?*
 
----
+We measure how sure a language model is about its answer and use that to decide
+how much KV-cache memory (how many retrieved passages) each question gets.
+Every question starts with no passages; it only gets more memory while the
+model is still unsure. Confident questions stay cheap, and the saved memory is
+exactly what a fixed "same for everyone" setting wastes.
 
-## 🚀 Quick Start Commands
+- **[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)** — the idea, the method, and the results, explained simply.
+- **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** — review of the earlier work, the plan, and the progress log.
 
-### 1. Environment Setup
+Built on two papers:
+- **Paper A** — *Query-Level Uncertainty in Large Language Models*, Chen, de Melo, Suchanek, Varoquaux, ICLR 2026 (Internal Confidence).
+- **Paper B** — *SemanticDPP: Efficient Uncertainty Quantification in LLMs*, anonymous, under review at ICLR 2026.
 
-Activate the project virtual environment (pre-configured with Python 3.11, PyTorch with MPS, Transformers, and Datasets):
+## Setup
 
-```bash
-# Activate existing environment
-source .venv/bin/activate
-```
+Python 3.11. Tested on an Apple M1 laptop with 8 GB RAM (the model runs on the
+Apple GPU); a CUDA GPU or plain CPU also works.
 
-*(Optional fresh setup from scratch):*
 ```bash
 python3.11 -m venv .venv
+```
+
+```bash
 source .venv/bin/activate
-pip install torch transformers scikit-learn scipy numpy datasets accelerate pytest pandas weasyprint
 ```
-
----
-
-### 2. Run All Unit Tests
-
-Verify all 16 mathematical components, matrix properties, and routing logic:
 
 ```bash
-PYTHONPATH=. .venv/bin/pytest tests/ -v
+pip install torch transformers datasets scikit-learn numpy matplotlib pytest
 ```
 
-Expected output:
-```text
-16 passed in ~3.2s
-```
+The model, `Qwen/Qwen2.5-1.5B-Instruct` (3 GB, no licence gate), downloads
+automatically the first time it is used.
 
----
+## Run
 
-### 3. Run the Interactive UCA Controller Demo
-
-Test how UCA dynamically routes queries across Fast Path (25% memory), Cascaded DPP (adaptive memory), and Abstain (100% memory):
+All commands are run from the repository root.
 
 ```bash
-# Run on built-in multi-difficulty test suite
-PYTHONPATH=. .venv/bin/python src/experiments/demo_uca.py
-
-# Test any custom query
-PYTHONPATH=. .venv/bin/python src/experiments/demo_uca.py --query "What is the capital of Japan?"
-PYTHONPATH=. .venv/bin/python src/experiments/demo_uca.py --query "Prove that every planar graph is 4-colorable."
+python -m pytest tests -q
 ```
-
-Sample output:
-```text
-==========================================================================================
-                     UCA ADAPTIVE COMPRESSION CONTROLLER DEMO
-==========================================================================================
-Query                                            | Route      | IC    | UCA   | KV%   | Beam | Tiers Used
----------------------------------------------------------------------------------------------------------
-What is the capital of Japan?                    | fast_path  | 0.66  | 0.34  | 25%   | 1    | tier_0
-In what year did the Apollo 11 mission land o... | standard   | 0.39  | 0.53  | 64%   | 3    | tier_0_and_tier_1
-Prove that every planar graph is 4-colorable ... | abstain    | 0.15  | 0.85  | 100%  | 4    | tier_0
-==========================================================================================
-```
-
----
-
-### 4. Reproduce Paper Baselines
-
-Reproduce Internal Confidence (Paper A) and SemanticDPP (Paper B) metrics on TriviaQA and GSM8K:
+Unit tests for the maths (weights, DPP, allocator, metrics). Takes ~10 seconds, needs no model.
 
 ```bash
-# Run both baselines on TriviaQA (50 samples)
-PYTHONPATH=. .venv/bin/python src/experiments/run_baseline.py --method both --dataset trivia_qa --n_samples 50
-
-# Run both baselines on GSM8K
-PYTHONPATH=. .venv/bin/python src/experiments/run_baseline.py --method both --dataset gsm8k --n_samples 50
-
-# Run only Internal Confidence (Paper A)
-PYTHONPATH=. .venv/bin/python src/experiments/run_baseline.py --method ic --dataset trivia_qa
-
-# Run only SemanticDPP (Paper B)
-PYTHONPATH=. .venv/bin/python src/experiments/run_baseline.py --method dpp --dataset trivia_qa
+python -m src.experiments.prepare_data --n 600
 ```
-
-Results are saved to:
-- `results/baseline_ic_trivia_qa.csv` & `.json`
-- `results/baseline_dpp_trivia_qa.csv` & `.json`
-- `results/baseline_summary_trivia_qa.json`
-
----
-
-### 5. Compile Mid-Evaluation Report PDF
-
-To recompile the official 3-page Mid-Evaluation Report PDF:
+Step 1. Streams 600 TriviaQA questions, retrieves the top-8 passages for each with BM25, and writes `data/triviaqa_rag.json`. Already included in the repo, so you can skip this.
 
 ```bash
-python3 generate_mid_evaluation_pdf.py
+python -m src.experiments.collect --limit 400
 ```
+Step 2. Runs the real model on 400 questions at every memory level (0, 1, 2, 4, 8 passages): the answer, its probability, Internal Confidence, and 5 sampled answers for SemanticDPP. Writes `results/runs.jsonl` and `results/runs.npz`. Slow (about 20 s per question on the M1, so over two hours) but resumable — run it again and it continues. Also already included. On an 8 GB machine, close other apps and do not start a second model process while it runs.
 
-Outputs:
-- `MID_EVALUATION.pdf` (Verified exactly 3 pages, vector SVG flowchart, zero black-box glyphs).
+```bash
+python -m src.experiments.analyze
+```
+Step 3. Computes every table and figure from the saved runs. About a minute, no model needed. Writes `results/summary.json` and `results/figures/`.
 
----
+```bash
+python -m src.experiments.demo --n 10
+```
+Live demo on 10 questions the experiments never saw: answers each one with as few passages as its confidence allows (at most 2 by default) and reports the KV memory used against giving everyone 2 passages.
 
-## 📁 Repository Structure
+```bash
+python -m src.experiments.demo --n 10 --max_passages 8 --threshold 0.8
+```
+Same, with a higher memory ceiling and a stricter confidence threshold.
+
+```bash
+python -m src.experiments.demo --question "Who wrote the novel Dracula?"
+```
+Confidence readings for any single question.
+
+## Layout
 
 ```text
-DA4022/
-├── configs/
-│   └── default.yaml                # System hyperparameters (tau_high, tau_low, alpha, etc.)
-├── src/
-│   ├── core/
-│   │   ├── internal_confidence.py  # Paper A: Internal Confidence Gate (Tier 0)
-│   │   ├── semantic_dpp.py         # Paper B: SemanticDPP & Eigenspectrum (Tier 1)
-│   │   └── uca_controller.py       # Our Novel Contribution: Continuous UCA Controller
-│   ├── evaluation/
-│   │   ├── metrics.py              # AUROC, PRR, ECE, Memory Savings
-│   │   └── benchmarks.py           # TriviaQA & GSM8K data loaders
-│   └── experiments/
-│       ├── run_baseline.py         # Paper A & B baseline reproduction runner
-│       └── demo_uca.py             # Interactive routing demonstration
-├── tests/
-│   ├── test_internal_confidence.py # IC gate & Attenuated Encoding unit tests
-│   ├── test_semantic_dpp.py        # Projector & DPP kernel unit tests
-│   ├── test_metrics.py             # AUROC / PRR / ECE mathematical tests
-│   └── test_uca_controller.py      # Multi-tier routing & allocation unit tests
-├── results/                        # Generated benchmark CSVs & JSON summaries
-├── MID_EVALUATION.md               # Mid-evaluation report markdown source
-├── MID_EVALUATION.pdf              # Compiled 3-page submission PDF
-├── PROJECT_OVERVIEW.md             # Simple conceptual explanation of the system
-└── README.md                       # Command & execution reference manual
+src/core/llm.py                  model wrapper: answer + its probability, sampled answers, P(Yes) per layer, KV bytes per token
+src/core/internal_confidence.py  Paper A: Internal Confidence
+src/core/semantic_dpp.py         Paper B: SemanticDPP with a learned kernel
+src/core/allocator.py            ours: calibration, escalation policy, one-shot allocation, baselines
+src/evaluation/data.py           TriviaQA loading, BM25 retrieval, answer checking
+src/evaluation/metrics.py        AUROC, PRR, ECE
+src/experiments/                 prepare_data, collect, analyze, demo
+tests/test_project.py            unit tests
+data/triviaqa_rag.json           600 questions with retrieved passages (400 used for experiments, the rest for the demo)
+results/                         saved model runs, summary.json, figures/
+temperory/                       the two papers and the course brief
+mid_report/, MID_EVALUATION.*    mid-term submission (kept as submitted)
 ```
